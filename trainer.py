@@ -79,12 +79,13 @@ class VQVAETrainer():
                 rank=int(os.environ['RANK']),
                 shuffle=True
             )
-            val_sampler = DistributedSampler(
-                val_dataset,
-                num_replicas=int(os.environ['WORLD_SIZE']),
-                rank=int(os.environ['RANK']),
-                shuffle=False
-            )
+            if val_dataset is not None:
+                val_sampler = DistributedSampler(
+                    val_dataset,
+                    num_replicas=int(os.environ['WORLD_SIZE']),
+                    rank=int(os.environ['RANK']),
+                    shuffle=False
+                )
             train_shuffle = False  # Cannot use shuffle when using sampler
             if self.rank == 0:
                 print(f"Using DistributedSampler, World Size: {os.environ['WORLD_SIZE']}, Rank: {os.environ['RANK']}")
@@ -98,15 +99,18 @@ class VQVAETrainer():
             num_workers=num_workers,
             pin_memory=torch.cuda.is_available()  # Enable pin_memory to accelerate GPU transfer
         )
-        self.val_dataloader = torch.utils.data.DataLoader(
-            val_dataset, 
-            shuffle=False, 
-            batch_size=effective_batch_size, 
-            sampler=val_sampler,
-            drop_last=False,
-            num_workers=num_workers,
-            pin_memory=torch.cuda.is_available()
-        )
+        if val_dataset is not None:
+            self.val_dataloader = torch.utils.data.DataLoader(
+                val_dataset, 
+                shuffle=False, 
+                batch_size=effective_batch_size, 
+                sampler=val_sampler,
+                drop_last=False,
+                num_workers=num_workers,
+                pin_memory=torch.cuda.is_available()
+            )
+        else:
+            self.val_dataloader = None
         
         # Save sampler reference to reset random seed between epochs
         self.train_sampler = train_sampler
@@ -346,6 +350,8 @@ class VQVAETrainer():
         # Only execute validation on rank 0 to avoid DDP multi-process duplicate validation/printing/saving
         rank_env = int(os.environ.get('RANK', '0')) if 'RANK' in os.environ else 0
         if rank_env != 0:
+            return 0.0
+        if self.val_dataloader is None:
             return 0.0
         self.model.eval()
         # Statistics

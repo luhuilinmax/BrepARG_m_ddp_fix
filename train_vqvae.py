@@ -41,8 +41,11 @@ def run(args):
     # Initialize datasets
     train_dataset = CombinedData(args.data_list, args.surface_list, args.edge_list, 
                                   validate=False, aug=True, use_type_flag=args.use_type_flag)
-    val_dataset = CombinedData(args.data_list, args.surface_list, args.edge_list, 
-                                validate=True, aug=False, use_type_flag=args.use_type_flag)
+    if rank == 0:
+        val_dataset = CombinedData(args.data_list, args.surface_list, args.edge_list, 
+                                    validate=True, aug=False, use_type_flag=args.use_type_flag)
+    else:
+        val_dataset = None
     
     # Initialize trainer (internally initializes DDP process group)
     vae = VQVAETrainer(args, train_dataset, val_dataset, multi_gpu=multi_gpu)

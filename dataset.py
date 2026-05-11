@@ -6,6 +6,10 @@ import pickle
 from tqdm import tqdm
 from utils import bbox_corners, get_bbox, rotate_axis, rotate_point_cloud
 
+def _dataset_log(message):
+    rank = int(os.environ.get('RANK', '0')) if 'RANK' in os.environ else 0
+    print(f'[rank {rank}] {message}', flush=True)
+
 class SurfData(torch.utils.data.Dataset):
     """ Surface VAE Dataloader - supports NCS data """
     def __init__(self, data_list, input_list, validate=False, aug=False, use_type_flag=False): 
@@ -15,24 +19,31 @@ class SurfData(torch.utils.data.Dataset):
 
         # Load validation data
         if self.validate: 
+            _dataset_log(f'SurfData(val): loading split list from {data_list}')
             with open(data_list, "rb") as tf:
                 data_paths = pickle.load(tf)['val']
+            _dataset_log(f'SurfData(val): found {len(data_paths)} validation files')
             
             datas = [] 
-            for path in data_paths:
+            for path in tqdm(data_paths, desc='Loading val surface data', disable=os.environ.get('RANK', '0') != '0'):
                 with open(path, "rb") as tf:
                     data = pickle.load(tf)
                 if 'surf_ncs' in data:
                     datas.append(data['surf_ncs'])
+            _dataset_log(f'SurfData(val): loaded {len(datas)} surface arrays, stacking...')
             if datas:
                 self.data = np.vstack(datas)
             else:
                 self.data = np.array([]).reshape(0, 32, 32, 3)
+            _dataset_log(f'SurfData(val): ready with shape {self.data.shape}')
 
         # Load training data (deduplicated)
         else:
+            _dataset_log(f'SurfData(train): loading deduplicated surfaces from {input_list}')
             with open(input_list, "rb") as tf:
                 self.data = pickle.load(tf)
+            shape = getattr(self.data, 'shape', None)
+            _dataset_log(f'SurfData(train): ready with {len(self.data)} items, shape={shape}')
         return
 
     def __len__(self):
@@ -63,26 +74,33 @@ class EdgeData(torch.utils.data.Dataset):
 
         # Load validation data
         if self.validate: 
+            _dataset_log(f'EdgeData(val): loading split list from {data_list}')
             with open(data_list, "rb") as tf:
                 data_paths = pickle.load(tf)['val']
+            _dataset_log(f'EdgeData(val): found {len(data_paths)} validation files')
 
             datas = []
-            for path in tqdm(data_paths):
+            for path in tqdm(data_paths, desc='Loading val edge data', disable=os.environ.get('RANK', '0') != '0'):
                 with open(path, "rb") as tf:
                     data = pickle.load(tf)
 
                 # Modification: use 'edge_ncs' instead of 'graph_edge_grid'
                 if 'edge_ncs' in data:
                     datas.append(data['edge_ncs'])
+            _dataset_log(f'EdgeData(val): loaded {len(datas)} edge arrays, stacking...')
             if datas:
                 self.data = np.vstack(datas)
             else:
                 self.data = np.array([]).reshape(0, 32, 3)
+            _dataset_log(f'EdgeData(val): ready with shape {self.data.shape}')
 
         # Load training data (deduplicated)
         else:
+            _dataset_log(f'EdgeData(train): loading deduplicated edges from {input_list}')
             with open(input_list, "rb") as tf:
                 self.data = pickle.load(tf)         
+            shape = getattr(self.data, 'shape', None)
+            _dataset_log(f'EdgeData(train): ready with {len(self.data)} items, shape={shape}')
         return
 
     def __len__(self):
@@ -113,17 +131,19 @@ class EdgeData(torch.utils.data.Dataset):
 class CombinedData(torch.utils.data.Dataset):
     """ Combined Surface and Edge VAE Dataloader """
     def __init__(self, data_list, surface_list, edge_list, validate=False, aug=False, use_type_flag=True):
-        rank = int(os.environ.get('RANK', '0')) if 'RANK' in os.environ else 0
-        if rank == 0:
-            print('Loading combined surface and edge data...')
+        split_name = 'val' if validate else 'train'
+        _dataset_log(f'CombinedData({split_name}): loading combined surface and edge data...')
         
         # Initialize surface dataset
+        _dataset_log(f'CombinedData({split_name}): initializing SurfData')
         self.surf_data = SurfData(data_list, surface_list, validate=validate, aug=aug, use_type_flag=use_type_flag)
         
         # Initialize edge dataset
+        _dataset_log(f'CombinedData({split_name}): initializing EdgeData')
         self.edge_data = EdgeData(data_list, edge_list, validate=validate, aug=aug, use_type_flag=use_type_flag)
         
         # Combine data
+        _dataset_log(f'CombinedData({split_name}): building combined index')
         self.data = []
         
         # Add surface data
@@ -134,8 +154,8 @@ class CombinedData(torch.utils.data.Dataset):
         for i in range(len(self.edge_data)):
             self.data.append(('edge', i))
             
-        if rank == 0:
-            print(f'Combined dataset size: {len(self.data)} (surfaces: {len(self.surf_data)}, edges: {len(self.edge_data)})')
+        _dataset_log(f'CombinedData({split_name}): ready with {len(self.data)} items '
+                     f'(surfaces: {len(self.surf_data)}, edges: {len(self.edge_data)})')
         
     def __len__(self):
         return len(self.data)

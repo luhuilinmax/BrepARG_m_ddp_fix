@@ -69,6 +69,15 @@ python train_vqvae.py \
   --env vqvae_single_gpu_debug \
   --dir_name checkpoints \
   --tb_log_dir logs/vqvae_single_gpu_debug
+
+
+# 5.10修改代码后的命令
+export CUDA_VISIBLE_DEVICES=2,3,4,5,6
+export OMP_NUM_THREADS=1
+torchrun --nproc_per_node=5 --master_port=29500 train_vqvae.py   --data_list /workspace/data/deduplicate/abc_data_split_6bit.pkl   --surface_list /workspace/data/deduplicate/abc_data_faces.pkl   --edge_list /workspace/data/deduplicate/abc_data_edges.pkl   --dataset_type abc   --batch_size 128   --train_epoch 3000   --test_epoch 15   --save_epoch 200   --env vqvae_debug   --dir_name checkpoints   --tb_log_dir logs/vqvae_debug
+
+
+
 ```
 
 **AR:**
